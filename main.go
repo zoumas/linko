@@ -32,7 +32,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 		logger.Printf("failed to create store: %v", err)
 		return 1
 	}
-	s := newServer(*st, httpPort, cancel)
+	s := newServer(*st, httpPort, cancel, logger)
 	var serverErr error
 	go func() {
 		serverErr = s.start()
