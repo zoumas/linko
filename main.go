@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -29,37 +30,44 @@ func main() {
 
 type closeFunc func() error
 
-func initializeLogger() (*log.Logger, closeFunc, error) {
-	logger := log.New(os.Stderr, "", log.LstdFlags)
-
-	name, set := os.LookupEnv("LINKO_LOG_FILE")
-	if !set {
-		return logger, func() error { return nil }, nil
+func initializeLogger(logFile string) (*log.Logger, closeFunc, error) {
+	if logFile == "" {
+		return log.New(os.Stderr, "", log.LstdFlags), func() error { return nil }, nil
 	}
 
-	file, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return logger, func() error { return nil }, fmt.Errorf("error opening log file: %w", err)
+		return nil, func() error { return nil }, fmt.Errorf("error opening log file: %w", err)
 	}
 
 	bufferedFile := bufio.NewWriterSize(file, 8192)
 	multiWriter := io.MultiWriter(os.Stderr, bufferedFile)
-	logger = log.New(multiWriter, "", log.LstdFlags)
+	logger := log.New(multiWriter, "", log.LstdFlags)
 
 	return logger, func() error {
-		return file.Close()
+		var err error
+
+		if flushErr := bufferedFile.Flush(); flushErr != nil {
+			err = fmt.Errorf("error flushing file: %w", flushErr)
+		}
+
+		if closeErr := file.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("error closing file: %w", closeErr))
+		}
+
+		return err
 	}, nil
 }
 
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
-	logger, closeLogger, err := initializeLogger()
+	logger, closeLogger, err := initializeLogger(os.Getenv("LINKO_LOG_FILE"))
 	if err != nil {
-		logger.Printf("failed to create logger: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to create logger: %v\n", err)
 		return 1
 	}
 	defer func() {
 		if err := closeLogger(); err != nil {
-			logger.Printf("failed to close logger: %v", err)
+			fmt.Fprintf(os.Stderr, "failed to close logger: %v\n", err)
 		}
 	}()
 
