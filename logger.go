@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 
+	"boot.dev/linko/internal/linkoerr"
 	pkgerr "github.com/pkg/errors"
 )
 
@@ -25,15 +26,15 @@ func replaceAttr(groups []string, attr slog.Attr) slog.Attr {
 		return attr
 	}
 
-	stackErr, ok := errors.AsType[stackTracer](err)
-	if !ok {
-		return slog.String("error", fmt.Sprintf("%+v", err))
+	attrs := []slog.Attr{slog.String("message", err.Error())}
+
+	if stackErr, ok := errors.AsType[stackTracer](err); ok {
+		attrs = append(attrs, slog.String("stack_trace", fmt.Sprintf("%+v", stackErr.StackTrace())))
 	}
 
-	return slog.GroupAttrs("error",
-		slog.String("message", stackErr.Error()),
-		slog.String("stack_trace", fmt.Sprintf("%+v", stackErr.StackTrace())),
-	)
+	attrs = append(attrs, linkoerr.Attrs(err)...)
+
+	return slog.GroupAttrs("error", attrs...)
 }
 
 type closeFunc func() error
