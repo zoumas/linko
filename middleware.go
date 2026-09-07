@@ -11,9 +11,9 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			h.ServeHTTP(w, r)
 
 			logger.Info("Served request",
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-				slog.String("client_ip", r.RemoteAddr),
+				"method", r.Method,
+				"path", r.URL.Path,
+				"client_ip", r.RemoteAddr,
 			)
 		})
 	}

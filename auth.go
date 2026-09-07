@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
+
+	pkgerr "github.com/pkg/errors"
 )
 
 type contextKey string
@@ -32,11 +33,11 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		ok, err := validatePassword(password, stored)
+		ok, err := s.validatePassword(password, stored)
 		if err != nil {
 			s.logger.Error("error validating password",
-				slog.String("user", username),
-				slog.String("error", err.Error()),
+				"user", username,
+				"error", err,
 			)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
@@ -50,13 +51,13 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func validatePassword(password, stored string) (bool, error) {
+func (s *server) validatePassword(password, stored string) (bool, error) {
 	err := bcrypt.CompareHashAndPassword([]byte(stored), []byte(password))
 	if err == bcrypt.ErrMismatchedHashAndPassword {
 		return false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, pkgerr.WithStack(err)
 	}
 	return true, nil
 }

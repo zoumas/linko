@@ -115,8 +115,8 @@ func (s *Store) Lookup(_ context.Context, short string) (string, error) {
 	if err != nil {
 		s.logger.Error(
 			"shortcode lookup error",
-			slog.String("filepath", shortcodeFilepath),
-			slog.String("error", err.Error()),
+			"filepath", shortcodeFilepath,
+			"error", err,
 		)
 		return "", err
 	}

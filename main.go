@@ -27,12 +27,27 @@ func main() {
 	os.Exit(status)
 }
 
+func replaceAttr(groups []string, attr slog.Attr) slog.Attr {
+	if attr.Key != "error" {
+		return attr
+	}
+
+	err, ok := attr.Value.Any().(error)
+	if !ok {
+		return attr
+	}
+	return slog.String("error", fmt.Sprintf("%+v", err))
+}
+
 type closeFunc func() error
 
 func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 	debugHandler := slog.NewTextHandler(
 		os.Stderr,
-		&slog.HandlerOptions{Level: slog.LevelDebug},
+		&slog.HandlerOptions{
+			Level:       slog.LevelDebug,
+			ReplaceAttr: replaceAttr,
+		},
 	)
 
 	if logFile == "" {
@@ -48,7 +63,8 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 	infoHandler := slog.NewJSONHandler(
 		bufferedFile,
 		&slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level:       slog.LevelInfo,
+			ReplaceAttr: replaceAttr,
 		},
 	)
 
@@ -83,7 +99,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 
 	st, err := store.New(dataDir, logger)
 	if err != nil {
-		logger.Error("failed to create store", slog.String("error", err.Error()))
+		logger.Error("failed to create store", "error", err)
 		return 1
 	}
 
@@ -100,11 +116,11 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	logger.Debug("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		logger.Error("failed to shutdown server", slog.String("error", err.Error()))
+		logger.Error("failed to shutdown server", "error", err)
 		return 1
 	}
 	if serverErr != nil {
-		logger.Error("server error", slog.String("error", serverErr.Error()))
+		logger.Error("server error", "error", serverErr)
 		return 1
 	}
 	return 0
