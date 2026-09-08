@@ -67,13 +67,24 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 		},
 	)
 
-	buildAttrs := []any{
+	env := os.Getenv("ENV")
+	if env == "" {
+		env = "unknown"
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get hostname: %v\n", err)
+	}
+
+	extraAttrs := []any{
 		slog.String("git_sha", build.GitSHA),
 		slog.String("build_time", build.BuildTime),
+		slog.String("env", env),
+		slog.String("hostname", hostname),
 	}
 
 	if logFile == "" {
-		return slog.New(debugHandler).With(buildAttrs...), func() error { return nil }, nil
+		return slog.New(debugHandler).With(extraAttrs...), func() error { return nil }, nil
 	}
 
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
@@ -90,7 +101,7 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 		},
 	)
 
-	logger := slog.New(slog.NewMultiHandler(debugHandler, infoHandler)).With(buildAttrs...)
+	logger := slog.New(slog.NewMultiHandler(debugHandler, infoHandler)).With(extraAttrs...)
 
 	return logger, func() error {
 		var err error
