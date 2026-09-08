@@ -17,6 +17,11 @@ func Test_requestLogger(t *testing.T) {
 			if a.Key == slog.TimeKey {
 				return slog.Time(slog.TimeKey, time.Date(2023, 10, 1, 12, 34, 57, 0, time.UTC))
 			}
+			// the measured duration differs on every run; pin it so the
+			// rendered line is comparable
+			if a.Key == "duration" {
+				return slog.Duration("duration", 0)
+			}
 			return a
 		},
 	}))
@@ -29,7 +34,7 @@ func Test_requestLogger(t *testing.T) {
 	rr := httptest.NewRecorder()
 	loggedHandler.ServeHTTP(rr, req)
 
-	const wantLogString = `time=2023-10-01T12:34:57.000Z level=INFO msg="Served request" method=GET path=/api/stats client_ip=192.0.2.1:1234` + "\n"
+	const wantLogString = `time=2023-10-01T12:34:57.000Z level=INFO msg="Served request" method=GET path=/api/stats client_ip=192.0.2.1:1234 duration=0s request_body_bytes=0 response_status=200 response_body_bytes=0` + "\n"
 	const wantStatusCode = http.StatusOK
 
 	if got := logBuffer.String(); got != wantLogString {
