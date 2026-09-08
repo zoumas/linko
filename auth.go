@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -46,6 +47,14 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		logCtx, ok := r.Context().Value(logContextKey).(*LogContext)
+		if !ok {
+			s.logger.Error("log context is not set", slog.String("key", string(logContextKey)))
+		} else {
+			logCtx.Username = username
+		}
+
 		r = r.WithContext(context.WithValue(r.Context(), UserContextKey, username))
 		next.ServeHTTP(w, r)
 	})
