@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,17 @@ const logContextKey contextKey = "log_context"
 type LogContext struct {
 	Username string
 	Error    error
+}
+
+func requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-REQUEST-ID")
+		if id == "" {
+			id = rand.Text()
+		}
+		w.Header().Set("X-REQUEST-ID", id)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -42,6 +54,8 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.String("client_ip", r.RemoteAddr),
+
+				slog.String("request_id", w.Header().Get("X-REQUEST-ID")),
 
 				slog.Duration("duration", dur),
 				slog.Int("request_body_bytes", spyReader.bytesRead),
