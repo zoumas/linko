@@ -61,14 +61,26 @@ func replaceAttr(groups []string, attr slog.Attr) slog.Attr {
 type closeFunc func() error
 
 func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
-	isTerminal := isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())
-	disableColor := !isTerminal
+	var (
+		handlers []slog.Handler
+		closers  []closeFunc
+	)
 
-	debugHandler := tint.NewTextHandler(os.Stderr, &tint.Options{
+	closeAll := func() error {
+		var errs []error
+		for _, closer := range closers {
+			errs = append(errs, closer())
+		}
+		return errors.Join(errs...)
+	}
+
+	// console: everything, coloured only when stderr is a terminal
+	isTerminal := isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())
+	handlers = append(handlers, tint.NewTextHandler(os.Stderr, &tint.Options{
 		Level:       slog.LevelDebug,
 		ReplaceAttr: replaceAttr,
-		NoColor:     disableColor,
-	})
+		NoColor:     !isTerminal,
+	}))
 
 	env := os.Getenv("ENV")
 	if env == "" {
@@ -77,6 +89,7 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to get hostname: %v\n", err)
+		hostname = "unknown"
 	}
 
 	extraAttrs := []any{
@@ -86,37 +99,37 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 		slog.String("hostname", hostname),
 	}
 
-	if logFile == "" {
-		return slog.New(debugHandler).With(extraAttrs...), func() error { return nil }, nil
-	}
-
-	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, func() error { return nil }, fmt.Errorf("error opening log file: %w", err)
-	}
-
-	bufferedFile := bufio.NewWriterSize(file, 8192)
-	infoHandler := slog.NewJSONHandler(
-		bufferedFile,
-		&slog.HandlerOptions{
-			Level:       slog.LevelInfo,
-			ReplaceAttr: replaceAttr,
-		},
-	)
-
-	logger := slog.New(slog.NewMultiHandler(debugHandler, infoHandler)).With(extraAttrs...)
-
-	return logger, func() error {
-		var err error
-
-		if flushErr := bufferedFile.Flush(); flushErr != nil {
-			err = fmt.Errorf("error flushing file: %w", flushErr)
+	// file: info and above, as JSON, buffered
+	if logFile != "" {
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return nil, closeAll, fmt.Errorf("error opening log file: %w", err)
 		}
 
-		if closeErr := file.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("error closing file: %w", closeErr))
-		}
+		bufferedFile := bufio.NewWriterSize(file, 8192)
+		handlers = append(handlers, slog.NewJSONHandler(
+			bufferedFile,
+			&slog.HandlerOptions{
+				Level:       slog.LevelInfo,
+				ReplaceAttr: replaceAttr,
+			},
+		))
+		closers = append(closers, func() error {
+			var err error
 
-		return err
-	}, nil
+			if flushErr := bufferedFile.Flush(); flushErr != nil {
+				err = fmt.Errorf("error flushing file: %w", flushErr)
+			}
+
+			if closeErr := file.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("error closing file: %w", closeErr))
+			}
+
+			return err
+		})
+	}
+
+	logger := slog.New(slog.NewMultiHandler(handlers...)).With(extraAttrs...)
+
+	return logger, closeAll, nil
 }
