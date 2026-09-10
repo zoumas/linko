@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +11,7 @@ import (
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	pkgerr "github.com/pkg/errors"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type stackTracer interface {
@@ -99,33 +99,30 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 		slog.String("hostname", hostname),
 	}
 
-	// file: info and above, as JSON, buffered
+	// file: info and above, as JSON, rotated by lumberjack
 	if logFile != "" {
-		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			return nil, closeAll, fmt.Errorf("error opening log file: %w", err)
+		fileLogger := &lumberjack.Logger{
+			Filename:   logFile,
+			MaxSize:    1,
+			MaxAge:     28,
+			MaxBackups: 10,
+			LocalTime:  false,
+			Compress:   true,
 		}
 
-		bufferedFile := bufio.NewWriterSize(file, 8192)
 		handlers = append(handlers, slog.NewJSONHandler(
-			bufferedFile,
+			fileLogger,
 			&slog.HandlerOptions{
 				Level:       slog.LevelInfo,
 				ReplaceAttr: replaceAttr,
 			},
 		))
+
 		closers = append(closers, func() error {
-			var err error
-
-			if flushErr := bufferedFile.Flush(); flushErr != nil {
-				err = fmt.Errorf("error flushing file: %w", flushErr)
+			if err := fileLogger.Close(); err != nil {
+				return fmt.Errorf("error closing log file: %w", err)
 			}
-
-			if closeErr := file.Close(); closeErr != nil {
-				err = errors.Join(err, fmt.Errorf("error closing file: %w", closeErr))
-			}
-
-			return err
+			return nil
 		})
 	}
 
